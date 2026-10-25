@@ -8,22 +8,21 @@ class CreateDepositRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return auth()->user()->id === $this->route('id');
+        return (string) auth()->id() === (string) $this->route('id');
     }
 
     public function rules(): array
     {
         return [
-            'value' => ['required', 'numeric', 'gte:0.01']
+            'value' => ['required', 'numeric', 'gt:0', 'regex:/^\d{1,6}(?:\.\d{1,2})?$/D'],
         ];
     }
 
-    public function messages(): array {
-        return [         
-            'value.required' => 'O valor é obrigatório',
-            'value.numeric' => 'O valor deve ser um número',
-            'value.gte' => 'O valor deve ser maior ou igual que 0.01',
-         
+    public function messages(): array
+    {
+        return [
+            'value.regex' => 'Informe um valor positivo com até duas casas decimais e no máximo 999999.99.',
+            'value.gt' => 'O valor deve ser maior que zero.',
         ];
     }
 }
