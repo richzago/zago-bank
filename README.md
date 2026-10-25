@@ -4,7 +4,7 @@
 
 ## Introdução
 
-Zago Bnank é um Sistema de Transações e é um aplicativo web desenvolvido em Laravel, que permite aos usuários realizar transações financeiras, como depósitos e transferências. Ele fornece uma API para gerenciar usuários e transações.
+Zago Bank é um Sistema de Transações e é um aplicativo web desenvolvido em Laravel, que permite aos usuários realizar transações financeiras, como depósitos e transferências. Ele fornece uma API para gerenciar usuários e transações.
 
 O projeto também está implantado no seguinte link: [https://zagobank.onrender.com](https://zagobank.onrender.com).
 

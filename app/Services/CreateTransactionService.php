@@ -5,43 +5,66 @@ namespace App\Services;
 use App\Exceptions\AppError;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Support\Money;
+use Illuminate\Support\Facades\DB;
 
-
-class CreateTransactionService {
-    public function execute(array $data) {
-        $userPayer = $this->findUser($data['payer']);
-
-        if($userPayer->type == 'SELLER') {
-            throw new AppError('Tipo de usuário inválido', 403);
+class CreateTransactionService
+{
+    public function execute(array $data): Transaction
+    {
+        // Não confiar no pagador enviado pelo cliente: deve ser quem fez login.
+        if ((string) $data['payer'] !== (string) auth()->id()) {
+            throw new AppError('Você não pode transferir da conta de outro usuário.', 403);
         }
 
-        if($userPayer->balance < $data['value']) {
-            throw new AppError("Saldo insuficiente para a transação", 400);
+        if ($data['payer'] === $data['payee']) {
+            throw new AppError('Não é possível transferir para a própria conta.', 422);
         }
 
-        $userPayee = $this->findUser($data['payee']);
+        $amountCents = Money::toCents((string) $data['value']);
 
-        $userPayer->balance -= $data['value'];
-        $userPayee->balance += $data['value'];
+        return DB::transaction(function () use ($data, $amountCents) {
+            // Ordem fixa de bloqueio para reduzir o risco de deadlocks.
+            $users = User::query()
+                ->whereIn('id', [$data['payer'], $data['payee']])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
 
-        $userPayer->save();
-        $userPayee->save();
+            $payer = $users->get($data['payer']);
+            $payee = $users->get($data['payee']);
 
-        return Transaction::create([
-            'payee_id' => $userPayee->id,
-            'payer_id' => $userPayer->id,
-            'value' => $data['value']
+            if (!$payer || !$payee) {
+                throw new AppError('Pagador ou destinatário não encontrado.', 404);
+            }
 
-        ]);
-    }
+            if ($payer->type === 'SELLER') {
+                throw new AppError('Lojistas não podem enviar transferências.', 403);
+            }
 
-    private function findUser(string $id) {
-        $user = User::find($id);
+            $payerCents = Money::toCents((string) $payer->balance);
+            $payeeCents = Money::toCents((string) $payee->balance);
 
-        if(is_null($user)) {
-            throw new AppError("Usuário {$id} não encontrado", 404);
-        }
+            if ($payerCents < $amountCents) {
+                throw new AppError('Saldo insuficiente para a transação.', 400);
+            }
 
-        return $user;
+            if ($payeeCents + $amountCents > Money::MAX_CENTS) {
+                throw new AppError('Saldo do destinatário excederia o limite suportado.', 422);
+            }
+
+            $payer->balance = Money::fromCents($payerCents - $amountCents);
+            $payee->balance = Money::fromCents($payeeCents + $amountCents);
+
+            $payer->save();
+            $payee->save();
+
+            return Transaction::create([
+                'payer_id' => $payer->id,
+                'payee_id' => $payee->id,
+                'value' => Money::fromCents($amountCents),
+            ]);
+        }, 3);
     }
 }
